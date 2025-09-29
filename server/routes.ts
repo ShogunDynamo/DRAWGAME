@@ -287,6 +287,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
             break;
           }
 
+          case "submit_prompt": {
+            const { roomId, prompt } = message.data;
+            
+            if (!connection.playerId || connection.roomId !== roomId) return;
+
+            const room = await storage.getRoom(roomId);
+            if (!room || room.currentPhase !== "writing") return;
+
+            // Find the game chain for this player (round 1, chain index = player index)
+            const playerIndex = room.players.findIndex(p => p.id === connection.playerId);
+            if (playerIndex === -1) return;
+
+            const chains = await storage.getGameChainsByRoom(roomId);
+            const playerChain = chains.find(chain => chain.chainIndex === playerIndex);
+            
+            if (playerChain) {
+              // Add prompt as first step in the chain
+              await storage.updateGameChain(playerChain.id, {
+                steps: [
+                  ...playerChain.steps,
+                  {
+                    type: "prompt" as const,
+                    playerId: connection.playerId,
+                    content: prompt,
+                    round: room.currentRound,
+                    timestamp: new Date(),
+                  }
+                ]
+              });
+            }
+
+            // Update player status
+            await storage.updatePlayer(roomId, connection.playerId, { status: "finished" });
+
+            // Check if all players finished
+            const updatedRoom = await storage.getRoom(roomId);
+            const allFinished = updatedRoom?.players.every(p => p.status === "finished");
+
+            // Broadcast prompt submitted
+            broadcastToRoom(roomId, {
+              type: "prompt_submitted",
+              data: { playerId: connection.playerId, room: updatedRoom }
+            });
+
+            // If all finished, move to drawing phase
+            if (allFinished && updatedRoom) {
+              await storage.updateRoom(roomId, {
+                currentPhase: "drawing",
+              });
+
+              // Reset player statuses
+              for (const player of updatedRoom.players) {
+                await storage.updatePlayer(roomId, player.id, { status: "waiting" });
+              }
+
+              const finalRoom = await storage.getRoom(roomId);
+              broadcastToRoom(roomId, {
+                type: "phase_changed",
+                data: { room: finalRoom }
+              });
+            }
+
+            break;
+          }
+
           case "drawing_update": {
             const { roomId, canvasData } = message.data;
             

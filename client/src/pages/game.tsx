@@ -37,6 +37,9 @@ export default function Game() {
         case "game_started":
           updateGameState(lastMessage.data.room);
           break;
+        case "prompt_submitted":
+          updateGameState(lastMessage.data.room);
+          break;
         case "drawing_updated":
           // Handle real-time drawing updates from other players
           break;
@@ -71,6 +74,18 @@ export default function Game() {
           roomId: params.roomId,
           canvasData,
           imageUrl,
+        },
+      });
+    }
+  };
+
+  const handleSubmitPrompt = (prompt: string) => {
+    if (params?.roomId) {
+      sendMessage({
+        type: "submit_prompt",
+        data: {
+          roomId: params.roomId,
+          prompt,
         },
       });
     }
@@ -116,6 +131,7 @@ export default function Game() {
             currentColor={currentColor}
             onDrawingUpdate={handleDrawingUpdate}
             onSubmitDrawing={handleSubmitDrawing}
+            onSubmitPrompt={handleSubmitPrompt}
             gamePhase={gameState.room.currentPhase}
             currentPrompt={gameState.currentPrompt}
           />

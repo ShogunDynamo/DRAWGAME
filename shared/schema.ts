@@ -126,6 +126,13 @@ export const wsMessageSchema = z.discriminatedUnion("type", [
     }),
   }),
   z.object({
+    type: z.literal("submit_prompt"),
+    data: z.object({
+      roomId: z.string(),
+      prompt: z.string(),
+    }),
+  }),
+  z.object({
     type: z.literal("submit_guess"),
     data: z.object({
       roomId: z.string(),

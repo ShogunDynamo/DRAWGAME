@@ -13,6 +13,7 @@ interface DrawingCanvasProps {
   currentColor: string;
   onDrawingUpdate: (canvasData: string) => void;
   onSubmitDrawing: (canvasData: string, imageUrl: string) => void;
+  onSubmitPrompt?: (prompt: string) => void;
   gamePhase: GamePhase;
   currentPrompt?: string;
 }
@@ -25,6 +26,7 @@ export default function DrawingCanvas({
   currentColor,
   onDrawingUpdate,
   onSubmitDrawing,
+  onSubmitPrompt,
   gamePhase,
   currentPrompt,
 }: DrawingCanvasProps) {
@@ -103,9 +105,9 @@ export default function DrawingCanvas({
   };
 
   const handleSubmitPrompt = () => {
-    if (prompt.trim()) {
-      // TODO: Send prompt via WebSocket
-      console.log("Submitting prompt:", prompt);
+    if (prompt.trim() && onSubmitPrompt) {
+      onSubmitPrompt(prompt);
+      setPrompt(""); // Clear prompt after submission
     }
   };
 
