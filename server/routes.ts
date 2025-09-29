@@ -255,15 +255,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
 
             // Update room to start game
-            const updatedRoom = await storage.updateRoom(roomId, {
+            await storage.updateRoom(roomId, {
               currentPhase: "writing",
               currentRound: 1
             });
 
-            console.log(`[START_GAME] Room ${roomId} has ${updatedRoom?.players.length} players after update`);
+            // Re-fetch the room to get the latest state with all players
+            const updatedRoom = await storage.getRoom(roomId);
+            if (!updatedRoom) {
+              ws.send(JSON.stringify({ type: "error", message: "Room not found after update" }));
+              return;
+            }
+
+            console.log(`[START_GAME] Room ${roomId} has ${updatedRoom.players.length} players after update`);
 
             // Initialize game chains
-            for (let i = 0; i < room.players.length; i++) {
+            for (let i = 0; i < updatedRoom.players.length; i++) {
               await storage.createGameChain({
                 roomId,
                 chainIndex: i,
@@ -396,17 +403,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     });
 
-    ws.on('close', () => {
+    ws.on('close', async () => {
       const connection = connections.get(connectionId);
       if (connection?.playerId && connection.roomId) {
-        // Remove player from room
-        storage.removePlayerFromRoom(connection.roomId, connection.playerId);
+        // Check if game is active
+        const room = await storage.getRoom(connection.roomId);
         
-        // Broadcast player disconnected
-        broadcastToRoom(connection.roomId, {
-          type: "player_disconnected",
-          data: { playerId: connection.playerId }
-        });
+        // Only remove player if room is in lobby/waiting phase
+        // During active game, keep players in room even if they disconnect
+        if (room && room.currentPhase === "lobby") {
+          // Remove player from room only in lobby
+          await storage.removePlayerFromRoom(connection.roomId, connection.playerId);
+          
+          // Broadcast player disconnected
+          broadcastToRoom(connection.roomId, {
+            type: "player_disconnected",
+            data: { playerId: connection.playerId }
+          });
+        } else {
+          // During active game, just mark as disconnected but keep in room
+          // (Could update player status to "disconnected" if needed)
+        }
       }
       
       connections.delete(connectionId);

@@ -34,6 +34,9 @@ export default function Game() {
   useEffect(() => {
     if (lastMessage) {
       switch (lastMessage.type) {
+        case "game_started":
+          updateGameState(lastMessage.data.room);
+          break;
         case "drawing_updated":
           // Handle real-time drawing updates from other players
           break;
