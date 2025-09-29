@@ -1,0 +1,119 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: hsl(222, 47%, 11%);
+  --foreground: hsl(213, 31%, 91%);
+  --card: hsl(221, 39%, 14%);
+  --card-foreground: hsl(213, 31%, 91%);
+  --popover: hsl(221, 39%, 14%);
+  --popover-foreground: hsl(213, 31%, 91%);
+  --primary: hsl(262, 83%, 58%);
+  --primary-foreground: hsl(0, 0%, 98%);
+  --secondary: hsl(24, 95%, 53%);
+  --secondary-foreground: hsl(0, 0%, 98%);
+  --muted: hsl(223, 39%, 20%);
+  --muted-foreground: hsl(215, 20%, 65%);
+  --accent: hsl(216, 87%, 59%);
+  --accent-foreground: hsl(0, 0%, 98%);
+  --destructive: hsl(0, 75%, 60%);
+  --destructive-foreground: hsl(0, 0%, 98%);
+  --border: hsl(223, 39%, 20%);
+  --input: hsl(223, 39%, 20%);
+  --ring: hsl(262, 83%, 58%);
+  --chart-1: hsl(262, 83%, 58%);
+  --chart-2: hsl(24, 95%, 53%);
+  --chart-3: hsl(142, 69%, 58%);
+  --chart-4: hsl(43, 89%, 58%);
+  --chart-5: hsl(0, 75%, 60%);
+  --sidebar: hsl(221, 39%, 14%);
+  --sidebar-foreground: hsl(213, 31%, 91%);
+  --sidebar-primary: hsl(262, 83%, 58%);
+  --sidebar-primary-foreground: hsl(0, 0%, 98%);
+  --sidebar-accent: hsl(223, 39%, 20%);
+  --sidebar-accent-foreground: hsl(262, 83%, 58%);
+  --sidebar-border: hsl(223, 39%, 20%);
+  --sidebar-ring: hsl(262, 83%, 58%);
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-serif: "Georgia", "Times New Roman", serif;
+  --font-mono: "Consolas", "Monaco", "Courier New", monospace;
+  --radius: 12px;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .drawing-canvas {
+    background: linear-gradient(45deg, #f8fafc 25%, transparent 25%), 
+                linear-gradient(-45deg, #f8fafc 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #f8fafc 75%), 
+                linear-gradient(-45deg, transparent 75%, #f8fafc 75%);
+    background-size: 20px 20px;
+    background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+    background-color: #ffffff;
+  }
+  
+  .tool-button {
+    @apply transition-all duration-200 ease-in-out;
+  }
+  
+  .tool-button:hover {
+    @apply -translate-y-0.5 shadow-lg;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  }
+  
+  .tool-button.active {
+    @apply bg-primary text-primary-foreground scale-95;
+  }
+  
+  .player-avatar {
+    @apply relative overflow-hidden;
+  }
+  
+  .player-avatar::after {
+    content: '';
+    @apply absolute -top-0.5 -left-0.5 -right-0.5 -bottom-0.5 rounded-full -z-10 opacity-0 transition-opacity duration-300;
+    background: linear-gradient(45deg, var(--primary), var(--accent), var(--secondary));
+  }
+  
+  .player-avatar.active::after {
+    @apply opacity-100;
+  }
+  
+  .timer-pulse {
+    @apply animate-pulse;
+  }
+  
+  .gradient-border {
+    background: linear-gradient(var(--background), var(--background)) padding-box,
+                linear-gradient(45deg, var(--primary), var(--accent)) border-box;
+    border: 2px solid transparent;
+  }
+  
+  .floating-panel {
+    backdrop-filter: blur(12px);
+    background: hsla(221, 39%, 14%, 0.85);
+  }
+
+  .slider {
+    @apply appearance-none cursor-pointer;
+  }
+
+  .slider::-webkit-slider-thumb {
+    @apply appearance-none w-4 h-4 bg-primary rounded-full cursor-pointer;
+  }
+
+  .slider::-moz-range-thumb {
+    @apply w-4 h-4 bg-primary rounded-full cursor-pointer border-0;
+  }
+}
