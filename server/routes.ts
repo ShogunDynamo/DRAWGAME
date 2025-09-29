@@ -13,6 +13,124 @@ interface ClientConnection {
 
 const connections = new Map<string, ClientConnection>();
 
+// Timer management for game phases
+interface PhaseTimer {
+  roomId: string;
+  intervalId: NodeJS.Timeout;
+  startTime: number;
+  duration: number;
+}
+
+const activeTimers = new Map<string, PhaseTimer>();
+
+function startPhaseTimer(roomId: string, duration: number) {
+  // Clear any existing timer for this room
+  stopPhaseTimer(roomId);
+
+  const startTime = Date.now();
+  
+  const intervalId = setInterval(async () => {
+    const elapsed = Math.floor((Date.now() - startTime) / 1000);
+    const timeLeft = Math.max(0, duration - elapsed);
+
+    // Broadcast time update to all players in room
+    broadcastToRoom(roomId, {
+      type: "time_update",
+      data: { timeLeft }
+    });
+
+    // When time runs out, auto-progress the phase
+    if (timeLeft === 0) {
+      stopPhaseTimer(roomId);
+      await handlePhaseTimeout(roomId);
+    }
+  }, 1000);
+
+  activeTimers.set(roomId, {
+    roomId,
+    intervalId,
+    startTime,
+    duration
+  });
+}
+
+function stopPhaseTimer(roomId: string) {
+  const timer = activeTimers.get(roomId);
+  if (timer) {
+    clearInterval(timer.intervalId);
+    activeTimers.delete(roomId);
+  }
+}
+
+async function handlePhaseTimeout(roomId: string) {
+  const room = await storage.getRoom(roomId);
+  if (!room) return;
+
+  // Auto-submit for all players who haven't finished
+  const waitingPlayers = room.players.filter(p => p.status === "waiting");
+  
+  for (const player of waitingPlayers) {
+    await storage.updatePlayer(roomId, player.id, { status: "finished" });
+  }
+
+  // Progress to next phase
+  await progressPhase(roomId);
+}
+
+async function progressPhase(roomId: string) {
+  const room = await storage.getRoom(roomId);
+  if (!room) return;
+
+  if (room.currentPhase === "writing") {
+    // Move to drawing phase
+    await storage.updateRoom(roomId, {
+      currentPhase: "drawing",
+      currentRound: 2
+    });
+  } else if (room.currentPhase === "drawing") {
+    // Check if game is done
+    const currentCycle = Math.floor(room.currentRound / 2);
+    
+    if (currentCycle >= room.totalRounds) {
+      await storage.updateRoom(roomId, {
+        currentPhase: "results"
+      });
+    } else {
+      await storage.updateRoom(roomId, {
+        currentPhase: "guessing",
+        currentRound: room.currentRound + 1
+      });
+    }
+  } else if (room.currentPhase === "guessing") {
+    await storage.updateRoom(roomId, {
+      currentPhase: "drawing",
+      currentRound: room.currentRound + 1
+    });
+  }
+
+  // Reset player statuses
+  for (const player of room.players) {
+    await storage.updatePlayer(roomId, player.id, { status: "waiting" });
+  }
+
+  const updatedRoom = await storage.getRoom(roomId);
+  
+  // Start timer for new phase if not in results
+  if (updatedRoom && updatedRoom.currentPhase !== "results" && updatedRoom.currentPhase !== "lobby") {
+    const duration = updatedRoom.currentPhase === "drawing" 
+      ? updatedRoom.drawingTime 
+      : updatedRoom.currentPhase === "writing"
+      ? updatedRoom.drawingTime  // Use drawingTime for writing phase
+      : updatedRoom.guessingTime;
+    startPhaseTimer(roomId, duration);
+  }
+
+  broadcastToRoom(roomId, {
+    type: "phase_changed",
+    data: { room: updatedRoom }
+  });
+}
+
 function generateRoomCode(): string {
   const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let result = '';
@@ -298,6 +416,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
               
               const updatedRoom = await storage.getRoom(roomId);
               
+              // Stop timer if room is now empty
+              if (!updatedRoom || updatedRoom.players.length === 0) {
+                stopPhaseTimer(roomId);
+              }
+              
               // Broadcast player left
               broadcastToRoom(roomId, {
                 type: "player_left",
@@ -363,6 +486,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
               });
             }
 
+            // Start timer for writing phase
+            startPhaseTimer(roomId, updatedRoom.drawingTime); // Use drawingTime as default for writing
+
             // Broadcast game started
             broadcastToRoom(roomId, {
               type: "game_started",
@@ -418,6 +544,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             // If all finished, move to drawing phase and increment round
             if (allFinished && updatedRoom) {
+              stopPhaseTimer(roomId); // Stop current timer
+              
               await storage.updateRoom(roomId, {
                 currentPhase: "drawing",
                 currentRound: updatedRoom.currentRound + 1
@@ -429,6 +557,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
 
               const finalRoom = await storage.getRoom(roomId);
+              
+              // Start timer for drawing phase
+              if (finalRoom) {
+                startPhaseTimer(roomId, finalRoom.drawingTime);
+              }
+              
               broadcastToRoom(roomId, {
                 type: "phase_changed",
                 data: { room: finalRoom }
@@ -517,6 +651,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             // If all finished, check if game is done or move to guessing
             if (allFinished && updatedRoom) {
+              stopPhaseTimer(roomId); // Stop current timer
+              
               // Check which draw/guess cycle we just completed
               // Round 2 = cycle 1, Round 4 = cycle 2, etc.
               // totalRounds represents number of draw/guess cycles to play
@@ -541,6 +677,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
 
               const finalRoom = await storage.getRoom(roomId);
+              
+              // Start timer for next phase (if not in results)
+              if (finalRoom && finalRoom.currentPhase === "guessing") {
+                startPhaseTimer(roomId, finalRoom.guessingTime);
+              }
+              
               broadcastToRoom(roomId, {
                 type: "phase_changed",
                 data: { room: finalRoom }
@@ -615,6 +757,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             // If all finished, always move back to drawing phase
             if (allFinished && updatedRoom) {
+              stopPhaseTimer(roomId); // Stop current timer
+              
               // After guessing, always go back to drawing for next cycle
               await storage.updateRoom(roomId, {
                 currentPhase: "drawing",
@@ -627,6 +771,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
 
               const finalRoom = await storage.getRoom(roomId);
+              
+              // Start timer for drawing phase
+              if (finalRoom) {
+                startPhaseTimer(roomId, finalRoom.drawingTime);
+              }
+              
               broadcastToRoom(roomId, {
                 type: "phase_changed",
                 data: { room: finalRoom }
@@ -645,17 +795,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     ws.on('close', async () => {
       const connection = connections.get(connectionId);
       if (connection?.playerId && connection.roomId) {
+        const roomId = connection.roomId;
+        
         // Check if game is active
-        const room = await storage.getRoom(connection.roomId);
+        const room = await storage.getRoom(roomId);
         
         // Only remove player if room is in lobby/waiting phase
         // During active game, keep players in room even if they disconnect
         if (room && room.currentPhase === "lobby") {
           // Remove player from room only in lobby
-          await storage.removePlayerFromRoom(connection.roomId, connection.playerId);
+          await storage.removePlayerFromRoom(roomId, connection.playerId);
+          
+          const updatedRoom = await storage.getRoom(roomId);
+          
+          // Stop timer if room is now empty
+          if (!updatedRoom || updatedRoom.players.length === 0) {
+            stopPhaseTimer(roomId);
+          }
           
           // Broadcast player disconnected
-          broadcastToRoom(connection.roomId, {
+          broadcastToRoom(roomId, {
             type: "player_disconnected",
             data: { playerId: connection.playerId }
           });

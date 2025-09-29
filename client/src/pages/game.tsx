@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useRoute } from "wouter";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useGameState } from "@/hooks/use-game-state";
-import { useQuery, queryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import GameHeader from "@/components/game-header";
 import DrawingToolbar from "@/components/drawing-toolbar";
 import DrawingCanvas from "@/components/drawing-canvas";
@@ -11,7 +11,7 @@ import PlayersPanel from "@/components/players-panel";
 export default function Game() {
   const [match, params] = useRoute("/game/:roomId");
   const { sendMessage, lastMessage } = useWebSocket();
-  const { gameState, updateGameState, setCurrentPrompt } = useGameState();
+  const { gameState, updateGameState, setCurrentPrompt, setTimeLeft } = useGameState();
   const [currentTool, setCurrentTool] = useState("brush");
   const [brushSize, setBrushSize] = useState(5);
   const [opacity, setOpacity] = useState(100);
@@ -84,9 +84,12 @@ export default function Game() {
         case "guess_submitted":
           updateGameState(lastMessage.data.room);
           break;
+        case "time_update":
+          setTimeLeft(lastMessage.data.timeLeft);
+          break;
       }
     }
-  }, [lastMessage, updateGameState]);
+  }, [lastMessage, updateGameState, setTimeLeft]);
 
   const handleDrawingUpdate = (canvasData: string) => {
     if (params?.roomId) {
