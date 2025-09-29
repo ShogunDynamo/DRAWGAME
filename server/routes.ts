@@ -32,6 +32,74 @@ function broadcastToRoom(roomId: string, message: any, excludeConnectionId?: str
   });
 }
 
+// Calculate which chain index a player should work on based on phase and round
+// Writing (round 1): Player i works on chain i (writes their own prompt)
+// Drawing/Guessing (round 2+): Chains rotate left each time we enter a new drawing phase
+// - Round 2 (drawing): chain (i - 1) mod N  
+// - Round 3 (guessing): chain (i - 1) mod N (same as round 2)
+// - Round 4 (drawing): chain (i - 2) mod N
+// - Round 5 (guessing): chain (i - 2) mod N (same as round 4)
+// Pattern: rotation = floor((round - 1) / 2) for drawing/guessing
+function getChainIndexForPlayer(playerIndex: number, round: number, numPlayers: number, phase: string): number {
+  if (phase === "writing") {
+    // Everyone works on their own chain
+    return playerIndex;
+  }
+  
+  // For drawing/guessing, calculate rotation
+  // Round 2 (drawing) = rotation 1: player i gets chain (i+1)%N
+  // Round 3 (guessing) = rotation 1: player i gets chain (i+1)%N
+  // Round 4 (drawing) = rotation 2: player i gets chain (i+2)%N, etc.
+  const rotation = Math.floor(round / 2);
+  return (playerIndex + rotation) % numPlayers;
+}
+
+// Get the prompt/drawing that a player should work with in the current round
+async function getPlayerTask(room: Room, playerId: string): Promise<{ chainIndex: number; prompt?: string; drawingImageUrl?: string; drawingId?: string } | null> {
+  const playerIndex = room.players.findIndex(p => p.id === playerId);
+  if (playerIndex === -1) return null;
+
+  const chainIndex = getChainIndexForPlayer(playerIndex, room.currentRound, room.players.length, room.currentPhase);
+  const chains = await storage.getGameChainsByRoom(room.id);
+  const targetChain = chains.find(c => c.chainIndex === chainIndex);
+
+  if (!targetChain) return { chainIndex };
+
+  // Find the item from the previous phase in the current round
+  if (room.currentPhase === "drawing") {
+    // Player should draw text (either original prompt or a guess from previous round)
+    // Find the most recent text item (prompt or guess) in this chain
+    const textSteps = targetChain.steps.filter(s => s.type === "prompt" || s.type === "guess");
+    const latestText = textSteps[textSteps.length - 1]; // Most recent text to draw
+    return {
+      chainIndex,
+      prompt: latestText?.content
+    };
+  } else if (room.currentPhase === "guessing") {
+    // Player should guess the drawing from the previous round (drawing was done in currentRound - 1)
+    const drawingRound = room.currentRound - 1;
+    const drawingSteps = targetChain.steps.filter(s => s.type === "drawing" && s.round === drawingRound);
+    const drawingForThisRound = drawingSteps[0]; // Should be only one drawing per round per chain
+    
+    // Find the actual drawing record to get the ID
+    if (drawingForThisRound) {
+      const drawings = await storage.getDrawingsByRound(room.id, drawingRound);
+      const matchingDrawing = drawings.find(d => 
+        d.playerId === drawingForThisRound.playerId && 
+        d.imageUrl === drawingForThisRound.content
+      );
+      
+      return {
+        chainIndex,
+        drawingImageUrl: drawingForThisRound.content,
+        drawingId: matchingDrawing?.id
+      };
+    }
+  }
+
+  return { chainIndex };
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Room management routes
   app.post("/api/rooms", async (req, res) => {
@@ -117,6 +185,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching guesses:", error);
       res.status(500).json({ message: "Failed to fetch guesses" });
+    }
+  });
+
+  app.get("/api/rooms/:roomId/player-task/:playerId", async (req, res) => {
+    try {
+      const { roomId, playerId } = req.params;
+      const room = await storage.getRoom(roomId);
+      
+      if (!room) {
+        return res.status(404).json({ message: "Room not found" });
+      }
+
+      const playerTask = await getPlayerTask(room, playerId);
+      res.json({ task: playerTask });
+    } catch (error) {
+      console.error("Error fetching player task:", error);
+      res.status(500).json({ message: "Failed to fetch player task" });
     }
   });
 
@@ -331,10 +416,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
               data: { playerId: connection.playerId, room: updatedRoom }
             });
 
-            // If all finished, move to drawing phase
+            // If all finished, move to drawing phase and increment round
             if (allFinished && updatedRoom) {
               await storage.updateRoom(roomId, {
                 currentPhase: "drawing",
+                currentRound: updatedRoom.currentRound + 1
               });
 
               // Reset player statuses
@@ -374,19 +460,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const room = await storage.getRoom(roomId);
             if (!room) return;
 
-            // Find the prompt for this player (from game chain or previous round)
-            const prompt = "Sample prompt"; // TODO: Get actual prompt from game state
+            // Get the prompt for this player from game chain
+            const playerTask = await getPlayerTask(room, connection.playerId);
+            if (!playerTask) {
+              ws.send(JSON.stringify({ type: "error", message: "Could not determine player task" }));
+              return;
+            }
+            
+            if (!playerTask.prompt) {
+              ws.send(JSON.stringify({ type: "error", message: "No prompt found for this player" }));
+              return;
+            }
 
             // Save drawing
-            await storage.createDrawing({
+            const drawing = await storage.createDrawing({
               roomId,
               playerId: connection.playerId,
               round: room.currentRound,
-              prompt,
+              prompt: playerTask.prompt,
               canvasData,
               imageUrl,
               timeSpent: 0,
             });
+
+            // Add drawing to the game chain
+            const chains = await storage.getGameChainsByRoom(roomId);
+            const targetChain = chains.find(c => c.chainIndex === playerTask.chainIndex);
+            
+            if (targetChain) {
+              await storage.updateGameChain(targetChain.id, {
+                steps: [
+                  ...targetChain.steps,
+                  {
+                    type: "drawing" as const,
+                    playerId: connection.playerId,
+                    content: imageUrl, // Store imageUrl as content for drawings
+                    round: room.currentRound,
+                    timestamp: new Date(),
+                  }
+                ]
+              });
+            }
 
             // Update player status
             await storage.updatePlayer(roomId, connection.playerId, { status: "finished" });
@@ -401,16 +515,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
               data: { playerId: connection.playerId, room: updatedRoom }
             });
 
-            // If all finished, move to next phase
+            // If all finished, check if game is done or move to guessing
             if (allFinished && updatedRoom) {
-              // Move to guessing phase or next round
-              const nextPhase = updatedRoom.currentPhase === "drawing" ? "guessing" : "writing";
-              const nextRound = nextPhase === "writing" ? updatedRoom.currentRound + 1 : updatedRoom.currentRound;
+              // Check which draw/guess cycle we just completed
+              // Round 2 = cycle 1, Round 4 = cycle 2, etc.
+              // totalRounds represents number of draw/guess cycles to play
+              const currentCycle = Math.floor(updatedRoom.currentRound / 2);
               
-              await storage.updateRoom(roomId, {
-                currentPhase: nextPhase,
-                currentRound: nextRound
-              });
+              if (currentCycle >= updatedRoom.totalRounds) {
+                // Game is complete, move to results
+                await storage.updateRoom(roomId, {
+                  currentPhase: "results",
+                });
+              } else {
+                // Continue to guessing phase
+                await storage.updateRoom(roomId, {
+                  currentPhase: "guessing",
+                  currentRound: updatedRoom.currentRound + 1
+                });
+              }
 
               // Reset player statuses
               for (const player of updatedRoom.players) {
@@ -435,29 +558,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const room = await storage.getRoom(roomId);
             if (!room) return;
 
-            // TODO: Find the drawing this player is guessing
-            const drawingId = "sample-drawing-id";
+            // Get the drawing this player is guessing
+            const playerTask = await getPlayerTask(room, connection.playerId);
+            if (!playerTask) {
+              ws.send(JSON.stringify({ type: "error", message: "Could not determine player task" }));
+              return;
+            }
+            
+            if (!playerTask.drawingImageUrl || !playerTask.drawingId) {
+              ws.send(JSON.stringify({ type: "error", message: "No drawing found for this player" }));
+              return;
+            }
 
-            // Save guess
+            // Save guess with actual drawing ID
             await storage.createGuess({
               roomId,
               playerId: connection.playerId,
-              drawingId,
+              drawingId: playerTask.drawingId,
               round: room.currentRound,
               guess,
               points: 0,
               timeSpent: 0,
             });
 
+            // Add guess to the game chain
+            const chains = await storage.getGameChainsByRoom(roomId);
+            const targetChain = chains.find(c => c.chainIndex === playerTask.chainIndex);
+            
+            if (targetChain) {
+              await storage.updateGameChain(targetChain.id, {
+                steps: [
+                  ...targetChain.steps,
+                  {
+                    type: "guess" as const,
+                    playerId: connection.playerId,
+                    content: guess,
+                    round: room.currentRound,
+                    timestamp: new Date(),
+                  }
+                ]
+              });
+            }
+
             // Update player status
             await storage.updatePlayer(roomId, connection.playerId, { status: "finished" });
 
-            // Similar logic to drawing submission for phase progression
+            // Check if all players finished
             const updatedRoom = await storage.getRoom(roomId);
+            const allFinished = updatedRoom?.players.every(p => p.status === "finished");
+
+            // Broadcast guess submitted
             broadcastToRoom(roomId, {
               type: "guess_submitted",
               data: { playerId: connection.playerId, room: updatedRoom }
             });
+
+            // If all finished, always move back to drawing phase
+            if (allFinished && updatedRoom) {
+              // After guessing, always go back to drawing for next cycle
+              await storage.updateRoom(roomId, {
+                currentPhase: "drawing",
+                currentRound: updatedRoom.currentRound + 1
+              });
+
+              // Reset player statuses
+              for (const player of updatedRoom.players) {
+                await storage.updatePlayer(roomId, player.id, { status: "waiting" });
+              }
+
+              const finalRoom = await storage.getRoom(roomId);
+              broadcastToRoom(roomId, {
+                type: "phase_changed",
+                data: { room: finalRoom }
+              });
+            }
 
             break;
           }
