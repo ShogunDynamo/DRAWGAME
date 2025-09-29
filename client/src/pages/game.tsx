@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useRoute } from "wouter";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useGameState } from "@/hooks/use-game-state";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, queryClient } from "@tanstack/react-query";
 import GameHeader from "@/components/game-header";
 import DrawingToolbar from "@/components/drawing-toolbar";
 import DrawingCanvas from "@/components/drawing-canvas";
@@ -11,11 +11,12 @@ import PlayersPanel from "@/components/players-panel";
 export default function Game() {
   const [match, params] = useRoute("/game/:roomId");
   const { sendMessage, lastMessage } = useWebSocket();
-  const { gameState, updateGameState } = useGameState();
+  const { gameState, updateGameState, setCurrentPrompt } = useGameState();
   const [currentTool, setCurrentTool] = useState("brush");
   const [brushSize, setBrushSize] = useState(5);
   const [opacity, setOpacity] = useState(100);
   const [currentColor, setCurrentColor] = useState("#6366F1");
+  const [currentDrawing, setCurrentDrawing] = useState<string>("");
 
   // Fetch initial room data
   const { data: roomData, isLoading } = useQuery({
@@ -29,6 +30,38 @@ export default function Game() {
       updateGameState(roomData.room);
     }
   }, [roomData, gameState.room, updateGameState]);
+
+  // Fetch player task when phase changes to drawing or guessing
+  useEffect(() => {
+    const fetchPlayerTask = async () => {
+      if (!gameState.room || !gameState.currentPlayer || !params?.roomId) return;
+      
+      const phase = gameState.room.currentPhase;
+      if (phase === "drawing" || phase === "guessing") {
+        try {
+          const response = await fetch(
+            `/api/rooms/${params.roomId}/player-task/${gameState.currentPlayer.id}`
+          );
+          const data = await response.json();
+          
+          if (data.task) {
+            // For drawing phase: set the prompt text
+            // For guessing phase: set the prompt text and drawing image
+            setCurrentPrompt(data.task.text || "");
+            if (data.task.imageUrl) {
+              setCurrentDrawing(data.task.imageUrl);
+            } else {
+              setCurrentDrawing("");
+            }
+          }
+        } catch (error) {
+          console.error("Failed to fetch player task:", error);
+        }
+      }
+    };
+
+    fetchPlayerTask();
+  }, [gameState.room?.currentPhase, gameState.room?.currentRound, gameState.currentPlayer, params?.roomId, setCurrentPrompt]);
 
   // Handle WebSocket messages
   useEffect(() => {
@@ -45,6 +78,7 @@ export default function Game() {
           break;
         case "phase_changed":
           updateGameState(lastMessage.data.room);
+          // Player task will be fetched by the useEffect watching phase changes
           break;
         case "drawing_submitted":
         case "guess_submitted":
@@ -134,6 +168,7 @@ export default function Game() {
             onSubmitPrompt={handleSubmitPrompt}
             gamePhase={gameState.room.currentPhase}
             currentPrompt={gameState.currentPrompt}
+            currentDrawing={currentDrawing}
           />
         </main>
         

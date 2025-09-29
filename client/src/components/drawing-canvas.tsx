@@ -16,6 +16,7 @@ interface DrawingCanvasProps {
   onSubmitPrompt?: (prompt: string) => void;
   gamePhase: GamePhase;
   currentPrompt?: string;
+  currentDrawing?: string;
 }
 
 export default function DrawingCanvas({
@@ -29,6 +30,7 @@ export default function DrawingCanvas({
   onSubmitPrompt,
   gamePhase,
   currentPrompt,
+  currentDrawing,
 }: DrawingCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fabricCanvasRef = useRef<FabricCanvas | null>(null);
@@ -171,7 +173,16 @@ export default function DrawingCanvas({
             <Card className="bg-card border-border">
               <CardContent className="p-6">
                 <div className="bg-white rounded-xl p-4 min-h-96 flex items-center justify-center">
-                  <span className="text-muted-foreground italic">Drawing will appear here</span>
+                  {currentDrawing ? (
+                    <img 
+                      src={currentDrawing} 
+                      alt="Drawing to guess" 
+                      data-testid="img-drawing-to-guess"
+                      className="max-w-full max-h-96 object-contain rounded-lg"
+                    />
+                  ) : (
+                    <span className="text-muted-foreground italic">Drawing will appear here</span>
+                  )}
                 </div>
               </CardContent>
             </Card>
