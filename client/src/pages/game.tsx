@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useRoute } from "wouter";
 import { useWebSocket } from "@/hooks/use-websocket";
 import { useGameState } from "@/hooks/use-game-state";
+import { useQuery } from "@tanstack/react-query";
 import GameHeader from "@/components/game-header";
 import DrawingToolbar from "@/components/drawing-toolbar";
 import DrawingCanvas from "@/components/drawing-canvas";
@@ -15,6 +16,19 @@ export default function Game() {
   const [brushSize, setBrushSize] = useState(5);
   const [opacity, setOpacity] = useState(100);
   const [currentColor, setCurrentColor] = useState("#6366F1");
+
+  // Fetch initial room data
+  const { data: roomData, isLoading } = useQuery({
+    queryKey: ["/api/rooms", params?.roomId],
+    enabled: !!params?.roomId,
+  });
+
+  // Update game state when room data is fetched
+  useEffect(() => {
+    if (roomData?.room && !gameState.room) {
+      updateGameState(roomData.room);
+    }
+  }, [roomData, gameState.room, updateGameState]);
 
   // Handle WebSocket messages
   useEffect(() => {

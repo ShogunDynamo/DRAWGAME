@@ -72,14 +72,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/rooms/:code", async (req, res) => {
+  app.get("/api/rooms/:codeOrId", async (req, res) => {
     try {
-      const { code } = req.params;
-      const room = await storage.getRoomByCode(code.toUpperCase());
+      const { codeOrId } = req.params;
+      
+      // Try to fetch by ID first (UUID format), then by code
+      let room = await storage.getRoom(codeOrId);
+      
+      if (!room) {
+        // If not found by ID, try by code (uppercase)
+        room = await storage.getRoomByCode(codeOrId.toUpperCase());
+      }
       
       if (!room) {
         return res.status(404).json({ message: "Room not found" });
       }
+
+      console.log(`[API] GET /api/rooms/${codeOrId} - Room ${room.code} has ${room.players.length} players`);
 
       res.json({ room });
     } catch (error) {
@@ -151,6 +160,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               return;
             }
 
+            console.log(`[JOIN_ROOM] Player ${playerName} joining room ${room.code} (${room.id}), current players: ${room.players.length}`);
+
             // Add player to room
             const player = await storage.addPlayerToRoom(room.id, {
               name: playerName,
@@ -159,6 +170,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               status: "waiting",
               score: 0,
             });
+
+            console.log(`[JOIN_ROOM] Player ${playerName} added successfully, id: ${player?.id}`);
 
             if (!player) {
               ws.send(JSON.stringify({ type: "error", message: "Failed to join room" }));
@@ -226,6 +239,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               return;
             }
 
+            console.log(`[START_GAME] Room ${roomId} has ${room.players.length} players before starting`);
+
             // Check if player is host
             const player = await storage.getPlayer(roomId, connection.playerId);
             if (!player?.isHost) {
@@ -244,6 +259,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               currentPhase: "writing",
               currentRound: 1
             });
+
+            console.log(`[START_GAME] Room ${roomId} has ${updatedRoom?.players.length} players after update`);
 
             // Initialize game chains
             for (let i = 0; i < room.players.length; i++) {
