@@ -115,40 +115,48 @@ export default function DrawingCanvas({
 
   if (gamePhase === "writing") {
     return (
-      <div className="flex-1 flex flex-col bg-muted/20">
-        <div className="bg-card border-b border-border p-6 text-center">
-          <h2 className="text-xl font-bold text-foreground mb-2">Write a Prompt</h2>
+      <div className="flex-1 flex flex-col bg-gradient-to-br from-background via-muted/20 to-background">
+        <div className="bg-gradient-to-r from-card to-card/95 border-b border-border p-6 text-center shadow-sm">
+          <h2 className="text-2xl font-bold text-foreground mb-2">
+            <i className="fas fa-pen-fancy text-primary mr-2" />
+            Write a Prompt
+          </h2>
           <p className="text-muted-foreground">Come up with something creative for others to draw!</p>
         </div>
         
         <div className="flex-1 flex items-center justify-center p-6">
-          <Card className="w-full max-w-2xl">
+          <Card className="w-full max-w-2xl shadow-2xl border-2 border-primary/20 bg-card/95 backdrop-blur-sm">
             <CardContent className="p-8">
               <div className="text-center mb-6">
-                <div className="w-16 h-16 bg-secondary/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                  <i className="fas fa-pen text-secondary text-2xl" />
+                <div className="w-20 h-20 bg-gradient-to-br from-secondary/30 to-accent/30 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-lg border-2 border-secondary/30">
+                  <i className="fas fa-lightbulb text-secondary text-3xl" />
                 </div>
-                <h3 className="text-2xl font-bold text-foreground">Your Turn to Write</h3>
+                <h3 className="text-2xl font-bold bg-gradient-to-r from-secondary to-accent bg-clip-text text-transparent">Your Turn to Write</h3>
                 <p className="text-muted-foreground mt-2">Write something fun, weird, or challenging!</p>
               </div>
               
               <div className="space-y-4">
-                <Input
-                  data-testid="input-prompt"
-                  placeholder="e.g., A cat playing guitar on Mars while wearing a cowboy hat"
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  className="text-lg p-4 bg-input border-border"
-                  maxLength={200}
-                />
+                <div className="relative">
+                  <Input
+                    data-testid="input-prompt"
+                    placeholder="e.g., A cat playing guitar on Mars while wearing a cowboy hat"
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    className="text-lg p-4 bg-input border-2 border-border focus:border-primary transition-colors shadow-inner"
+                    maxLength={200}
+                  />
+                  <div className="absolute right-3 bottom-3 text-xs text-muted-foreground">
+                    {prompt.length}/200
+                  </div>
+                </div>
                 
                 <Button
                   data-testid="button-submit-prompt"
                   onClick={handleSubmitPrompt}
                   disabled={!prompt.trim()}
-                  className="w-full bg-secondary hover:bg-secondary/90 text-secondary-foreground py-3 text-lg"
+                  className="w-full bg-gradient-to-r from-secondary to-accent hover:from-secondary/90 hover:to-accent/90 text-white py-4 text-lg shadow-lg font-semibold transition-all hover:scale-[1.02] disabled:opacity-50 disabled:hover:scale-100"
                 >
-                  <i className="fas fa-check mr-2" />
+                  <i className="fas fa-paper-plane mr-2" />
                   Submit Prompt
                 </Button>
               </div>

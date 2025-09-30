@@ -61,9 +61,9 @@ export default function Game() {
           if (data.task) {
             // For drawing phase: set the prompt text
             // For guessing phase: set the prompt text and drawing image
-            setCurrentPrompt(data.task.text || "");
-            if (data.task.imageUrl) {
-              setCurrentDrawing(data.task.imageUrl);
+            setCurrentPrompt(data.task.prompt || "");
+            if (data.task.drawingImageUrl) {
+              setCurrentDrawing(data.task.drawingImageUrl);
             } else {
               setCurrentDrawing("");
             }
