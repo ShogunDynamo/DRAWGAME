@@ -27,6 +27,7 @@ function startPhaseTimer(roomId: string, duration: number) {
   // Clear any existing timer for this room
   stopPhaseTimer(roomId);
 
+  console.log(`[TIMER] Starting ${duration}s timer for room ${roomId}`);
   const startTime = Date.now();
   
   const intervalId = setInterval(async () => {
@@ -41,6 +42,7 @@ function startPhaseTimer(roomId: string, duration: number) {
 
     // When time runs out, auto-progress the phase
     if (timeLeft === 0) {
+      console.log(`[TIMER] Time expired for room ${roomId}`);
       stopPhaseTimer(roomId);
       await handlePhaseTimeout(roomId);
     }
@@ -330,6 +332,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   wss.on('connection', (ws, req) => {
     const connectionId = randomBytes(16).toString('hex');
+    console.log(`[WS] New WebSocket connection: ${connectionId}`);
     connections.set(connectionId, { ws });
 
     ws.on('message', async (data) => {
@@ -500,6 +503,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           case "submit_prompt": {
             const { roomId, prompt } = message.data;
+            console.log(`[SUBMIT_PROMPT] Player ${connection.playerId} submitting prompt: ${prompt}`);
             
             if (!connection.playerId || connection.roomId !== roomId) return;
 
