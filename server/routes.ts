@@ -344,6 +344,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!connection) return;
 
         switch (message.type) {
+          case "identify_player": {
+            const { roomId, playerId } = message.data;
+            console.log(`[IDENTIFY_PLAYER] Linking connection to player ${playerId} in room ${roomId}`);
+            
+            // Verify player exists in room
+            const room = await storage.getRoom(roomId);
+            if (!room || !room.players.find(p => p.id === playerId)) {
+              ws.send(JSON.stringify({ type: "error", message: "Player not found in room" }));
+              return;
+            }
+            
+            // Link connection to player
+            connection.playerId = playerId;
+            connection.roomId = roomId;
+            
+            ws.send(JSON.stringify({
+              type: "player_identified",
+              data: { playerId, roomId }
+            }));
+            
+            break;
+          }
+
           case "join_room": {
             const { roomCode, playerName } = message.data;
             

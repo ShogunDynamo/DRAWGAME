@@ -10,7 +10,7 @@ import PlayersPanel from "@/components/players-panel";
 
 export default function Game() {
   const [match, params] = useRoute("/game/:roomId");
-  const { sendMessage, lastMessage } = useWebSocket();
+  const { sendMessage, lastMessage, connectionStatus } = useWebSocket();
   const { gameState, updateGameState, setCurrentPrompt, setTimeLeft } = useGameState();
   const [currentTool, setCurrentTool] = useState("brush");
   const [brushSize, setBrushSize] = useState(5);
@@ -23,6 +23,19 @@ export default function Game() {
     queryKey: ["/api/rooms", params?.roomId],
     enabled: !!params?.roomId,
   });
+
+  // Identify player when WebSocket connects
+  useEffect(() => {
+    if (connectionStatus === "connected" && params?.roomId && gameState.currentPlayer) {
+      sendMessage({
+        type: "identify_player",
+        data: {
+          roomId: params.roomId,
+          playerId: gameState.currentPlayer.id,
+        },
+      });
+    }
+  }, [connectionStatus, params?.roomId, gameState.currentPlayer, sendMessage]);
 
   // Update game state when room data is fetched
   useEffect(() => {

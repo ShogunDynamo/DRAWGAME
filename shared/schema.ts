@@ -92,6 +92,13 @@ export const insertGameChainSchema = gameChainSchema.omit({ id: true });
 // WebSocket Message Types
 export const wsMessageSchema = z.discriminatedUnion("type", [
   z.object({
+    type: z.literal("identify_player"),
+    data: z.object({
+      roomId: z.string(),
+      playerId: z.string(),
+    }),
+  }),
+  z.object({
     type: z.literal("join_room"),
     data: z.object({
       roomCode: z.string(),
