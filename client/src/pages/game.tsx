@@ -26,8 +26,9 @@ export default function Game() {
 
   // Update game state when room data is fetched
   useEffect(() => {
-    if (roomData?.room && !gameState.room) {
-      updateGameState(roomData.room);
+    const data = roomData as any;
+    if (data?.room && !gameState.room) {
+      updateGameState(data.room);
     }
   }, [roomData, gameState.room, updateGameState]);
 
